@@ -26,10 +26,6 @@ export async function geminiGenerate(model: string, body: unknown): Promise<Part
   return json.candidates?.[0]?.content?.parts ?? [];
 }
 
-export function textModel() {
-  return process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
-}
-
 /** Gemini TTS raw 16-bit PCM (24 kHz mono) deta hai; browser ke liye usse WAV mein lapet-te hain. */
 export function pcmToWav(pcm: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
   const header = Buffer.alloc(44);
@@ -50,7 +46,3 @@ export function pcmToWav(pcm: Buffer, sampleRate = 24000, channels = 1, bitsPerS
   return Buffer.concat([header, pcm]);
 }
 
-/** Chhote kaamon ke liye "thinking" band, taaki jawab jaldi aaye. Sirf 2.5 models ye option samajhte hain. */
-export function fastConfig(model: string) {
-  return model.includes("2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {};
-}

@@ -10,7 +10,6 @@ const LOCAL_MODEL = "/models/gesture_recognizer.task";
 const REMOTE_MODEL =
   "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
 
-const HAND_COLORS = ["#ffb347", "#5eead4"];
 
 /**
  * Camera kholta hai, MediaPipe GestureRecognizer load karta hai, aur har video frame par
@@ -27,7 +26,6 @@ export function useHandTracker(onResult: (result: GestureRecognizerResult, now: 
 
   const [status, setStatus] = useState<TrackerStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [fps, setFps] = useState(0);
 
   const loadRecognizer = useCallback(async () => {
     if (recognizerRef.current) return recognizerRef.current;
@@ -93,8 +91,6 @@ export function useHandTracker(onResult: (result: GestureRecognizerResult, now: 
       const drawer = new DrawingUtils(ctx);
 
       let lastVideoTime = -1;
-      let frames = 0;
-      let fpsSince = performance.now();
 
       const loop = () => {
         rafRef.current = requestAnimationFrame(loop);
@@ -110,20 +106,15 @@ export function useHandTracker(onResult: (result: GestureRecognizerResult, now: 
         const result = recognizer.recognizeForVideo(video, now);
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        result.landmarks.forEach((hand, i) => {
-          const color = HAND_COLORS[i % HAND_COLORS.length];
-          drawer.drawConnectors(hand, GestureRecognizer.HAND_CONNECTIONS, { color, lineWidth: 4 });
-          drawer.drawLandmarks(hand, { color: "#fff", fillColor: color, lineWidth: 1, radius: 3 });
-        });
+        for (const hand of result.landmarks) {
+          drawer.drawConnectors(hand, GestureRecognizer.HAND_CONNECTIONS, {
+            color: "rgba(255,255,255,0.85)",
+            lineWidth: 2,
+          });
+          drawer.drawLandmarks(hand, { color: "rgba(255,255,255,0.95)", fillColor: "#fff", lineWidth: 0, radius: 2.5 });
+        }
 
         onResultRef.current(result, now);
-
-        frames++;
-        if (now - fpsSince > 1000) {
-          setFps(Math.round((frames * 1000) / (now - fpsSince)));
-          frames = 0;
-          fpsSince = now;
-        }
       };
       loop();
     } catch (err) {
@@ -140,22 +131,7 @@ export function useHandTracker(onResult: (result: GestureRecognizerResult, now: 
     }
   }, [loadRecognizer, stop]);
 
-  /** Current frame ki mirrored JPEG (Gemini verify ke liye). */
-  const captureFrame = useCallback((maxWidth = 512) => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth) return null;
-    const scale = Math.min(1, maxWidth / video.videoWidth);
-    const c = document.createElement("canvas");
-    c.width = Math.round(video.videoWidth * scale);
-    c.height = Math.round(video.videoHeight * scale);
-    const ctx = c.getContext("2d")!;
-    ctx.translate(c.width, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, c.width, c.height);
-    return c.toDataURL("image/jpeg", 0.75);
-  }, []);
-
   useEffect(() => stop, [stop]);
 
-  return { videoRef, canvasRef, status, error, fps, start, stop, captureFrame };
+  return { videoRef, canvasRef, status, error, start, stop };
 }
