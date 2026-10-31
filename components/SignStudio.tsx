@@ -7,7 +7,7 @@ import { SIGNS, SIGN_BY_ID, type Lang } from "@/lib/signs";
 import { classifyFrame } from "@/lib/handshape";
 import { glyphSvg } from "@/lib/glyph";
 import { SignStabilizer } from "@/lib/stabilizer";
-import { prefetch, speak, stopSpeaking } from "@/lib/speech";
+import { browserHasVoice, prefetch, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
 
 type ApiStatus = { elevenlabs: boolean; gemini: boolean; ttsProvider: string };
 type Spoken = { id: number; signId: string };
@@ -58,6 +58,16 @@ export default function SignStudio() {
     if (api && (api.elevenlabs || api.gemini)) prefetch(SIGNS.map((s) => s.phrase[lang]), lang);
   }, [api, lang]);
 
+  // Browser ki voices der se load hoti hain; aane par label update karo.
+  const [voicesReady, setVoicesReady] = useState(0);
+  useEffect(() => {
+    if (typeof speechSynthesis === "undefined") return;
+    const bump = () => setVoicesReady((n) => n + 1);
+    speechSynthesis.addEventListener("voiceschanged", bump);
+    bump();
+    return () => speechSynthesis.removeEventListener("voiceschanged", bump);
+  }, []);
+
   const say = useCallback((signId: string) => {
     const sign = SIGN_BY_ID[signId];
     if (!sign) return;
@@ -89,11 +99,23 @@ export default function SignStudio() {
   const current = live.signId ? SIGN_BY_ID[live.signId] : null;
   const last = history[0] ? SIGN_BY_ID[history[0].signId] : null;
   const shown = current ?? last;
+  const serverVoice = Boolean(api && (api.elevenlabs || api.gemini));
   const voiceLabel = !api
     ? ""
-    : api.elevenlabs || api.gemini
+    : serverVoice
       ? `Voice: ${api.elevenlabs && api.ttsProvider !== "gemini" ? "ElevenLabs" : "Gemini"}`
-      : "Voice: browser (API key set nahi)";
+      : "Voice: browser";
+  // voicesReady sirf re-render ke liye hai
+  const voiceWarning =
+    api && !serverVoice && voicesReady >= 0 && !browserHasVoice(lang)
+      ? lang === "hi"
+        ? "Is laptop ke browser mein Hindi awaaz nahi hai, aur server par ElevenLabs/Gemini key set nahi hai. Vercel mein ELEVENLABS_API_KEY daalo, ya English chuno."
+        : "Is browser mein English awaaz nahi mili. Vercel mein ELEVENLABS_API_KEY daalo."
+      : null;
+  const start = () => {
+    unlockAudio();
+    void tracker.start();
+  };
 
   return (
     <div className="app">
@@ -132,7 +154,7 @@ export default function SignStudio() {
             <canvas ref={tracker.canvasRef} />
             {!running && (
               <div className="cam-start">
-                <button className="primary" onClick={tracker.start} disabled={loading}>
+                <button className="primary" onClick={start} disabled={loading}>
                   {tracker.status === "loading-model"
                     ? "Model load ho raha hai…"
                     : tracker.status === "starting-camera"
@@ -146,7 +168,11 @@ export default function SignStudio() {
                 )}
               </div>
             )}
-            {running && debug && <span className="debug">{debug}</span>}
+            {running && debug && (
+              <span className="debug">
+                {debug} · {tracker.delegate}
+              </span>
+            )}
           </div>
 
           <div className="caption" aria-live="polite">
@@ -160,6 +186,7 @@ export default function SignStudio() {
             <div className="meter">
               <span style={{ transform: `scaleX(${live.progress})` }} />
             </div>
+            {voiceWarning && <p className="warn">{voiceWarning}</p>}
             {history.length > 1 && (
               <ul className="history">
                 {history.slice(1).map((h) => (
@@ -180,7 +207,10 @@ export default function SignStudio() {
               <button
                 key={s.id}
                 className={`sign ${live.signId === s.id ? "active" : ""}`}
-                onClick={() => say(s.id)}
+                onClick={() => {
+                  unlockAudio();
+                  say(s.id);
+                }}
                 title={s.hint}
               >
                 <span className="glyph" dangerouslySetInnerHTML={{ __html: glyphs[s.id] }} />
